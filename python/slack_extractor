@@ -1,30 +1,22 @@
-# Slack Export Extractor
-# This script will download all files from a slack export
-# Usage: Place this script in the same directory as your slack export
-#        Run the script and follow the prompts
-#        All files will be downloaded to a folder called "z_downloaded_files" in the same directory as the script
-#        If you want to download from all channels, enter * when prompted
-#        If you want to download from specific channels, enter a comma seperated list of the channel numbers when prompted
-
 import os, json, requests
 
 currentDir = os.getcwd()
-downloadDir = currentDir + "\\z_downloaded_files"
+downloadDir = os.path.join(currentDir, "z_downloaded_files")
 os.makedirs(downloadDir, exist_ok=True)
 
 def startup():
     print("Available Channels:")
-    for index, channel in enumerate(os.listdir(currentDir)):
+    channels = [name for name in os.listdir(currentDir) if os.path.isdir(os.path.join(currentDir, name))]
+    for index, channel in enumerate(channels):
         print(f"{index} - {channel}")
-    print("Enter a comma seperated list of the channels you want to download from, enter * to download everything:")
-    selectedChannelsList = input("-> ").split(",")
-    downloadFiles(selectedChannelsList)
+    print("Enter a comma separated list of the channels you want to download from, enter * to download everything:")
+    selectedChannelsList = set(input("-> ").split(","))
+    downloadFiles(selectedChannelsList, channels)
     
-def downloadFiles(channelList):
-    for index, channel in enumerate(os.listdir(currentDir)):
+def downloadFiles(channelList, channels):
+    for index, channel in enumerate(channels):
         if str(index) in channelList or "*" in channelList:
-            channelName = channel.split("\\")[-1]
-            print(f"Downloading from {channelName}")
+            print(f"Downloading from {channel}")
             for day in os.listdir(os.path.join(currentDir, channel)):
                 dayExport = json.load(open(os.path.join(currentDir, channel, day), encoding='utf-8'))
                 for message in dayExport:
@@ -33,14 +25,14 @@ def downloadFiles(channelList):
                             if "url_private_download" in file:
                                 fileUrl = file["url_private_download"]
                                 fileName = file["name"]
-                                filePath = os.path.join(downloadDir, channelName, fileName)
+                                filePath = os.path.join(downloadDir, channel, fileName)
                                 os.makedirs(os.path.dirname(filePath), exist_ok=True)
                                 if not os.path.isfile(filePath):
-                                    print("Downloading " + channelName + " / " + fileName + " from " + fileUrl)
+                                    print(f"Downloading {channel} / {fileName} from {fileUrl}")
                                     response = requests.get(fileUrl, stream=True)
                                     with open(filePath, 'wb') as out_file:
                                         out_file.write(response.content)
                                 else:
-                                    print("Skipping " + fileName + " from " + fileUrl + " because it already exists")
+                                    print(f"Skipping {fileName} from {fileUrl} because it already exists")
     print("\n\n--Done!--")
 startup()

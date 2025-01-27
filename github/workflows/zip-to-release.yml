@@ -1,0 +1,99 @@
+name: Release WordPress Plugin
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Extract version number
+      - name: Extract version Number
+        id: get_version
+        run: |
+          version=$(grep -Eroh 'Version: [0-9]+\.[0-9]+\.[0-9]+' . | awk '{print $NF}' | head -n 1)
+          if [ -z "$version" ]; then
+            echo "Error: Version not found."
+            exit 1
+          fi
+          echo "version: $version"
+          echo "version=$version" >> $GITHUB_ENV
+
+      # Step 3: Get the latest commit message for release notes
+      - name: Get latest commit message
+        id: get_commit_message
+        run: |
+          notes=$(git log -1 --pretty=%B)
+          if [ -z "$notes" ]; then
+            echo "Error: No commit message found."
+            exit 1
+          fi
+      
+          echo "Release notes:"
+          echo "$notes"
+      
+          echo "release_notes<<EOF" >> $GITHUB_ENV
+          echo "$notes" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      # Step 4: Create ZIP file of the main branch
+      - name: Create plugin ZIP
+        run: |
+          mkdir -p release
+          zip -r "release/repo.zip" . -x '*.git*'
+          if [ ! -f "release/repo.zip" ]; then
+            echo "Error: ZIP file creation failed."
+            exit 1
+          fi
+          echo "ZIP file created: release/tel.zip"
+
+      # Step 5: Generate release tag (ensure unique tag)
+      - name: Generate release tag
+        id: increment_tag
+        run: |
+          version=${{ env.version }}
+          while git rev-parse "refs/tags/$version" >/dev/null 2>&1; do
+            echo "Tag $version already exists. Incrementing..."
+            major=$(echo "$version" | cut -d. -f1)
+            minor=$(echo "$version" | cut -d. -f2)
+            patch=$(echo "$version" | cut -d. -f3)
+            patch=$((patch + 1))
+            version="$major.$minor.$patch"
+          done
+          echo "Final tag: $version"
+          echo "version=$version" >> $GITHUB_ENV
+      
+      # Step 6: Create GitHub release
+      - name: Create GitHub release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.version }}
+          release_name: "Release ${{ env.version }}"
+          body: ${{ env.release_notes }}
+          draft: false
+          prerelease: false
+
+      # Step 7: Upload ZIP file to the GitHub release
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release/repo.zip
+          asset_name: repo.zip
+          asset_content_type: application/zip
